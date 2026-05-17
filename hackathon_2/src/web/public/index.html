@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Bitcoin Fee Prices Demo</title>
+    <style>
+      :root{
+        --bg:#0b0f14;
+        --panel:#0f1720;
+        --muted:#9aa6b2;
+        --accent:#4cc9f0;
+        --top-accent:#7ef8ff;
+      }
+      html,body{height:100%;}
+      body {
+        font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+        margin: 0;
+        background: linear-gradient(180deg,var(--bg),#071018);
+        color: #e6f0f6;
+        -webkit-font-smoothing:antialiased;
+        padding: 2rem;
+      }
+      .container{
+        max-width:900px;
+        margin:0 auto;
+      }
+      header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+      h1{margin:0;font-size:1.25rem;color:var(--top-accent)}
+      button{background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--accent);padding:0.6rem 0.9rem;border-radius:8px;cursor:pointer}
+      .panel{background:linear-gradient(180deg,var(--panel),#07121a);padding:1rem;border-radius:12px;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
+      .fees{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+      .fee{padding:12px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column}
+      .fee .label{font-size:0.9rem;color:var(--muted)}
+      .fee .value{font-weight:700;font-size:1.15rem;color:var(--accent)}
+      .fee.top{transform:translateY(-4px);background:linear-gradient(180deg,rgba(126,248,255,0.06),rgba(76,201,240,0.02));border-color:rgba(126,248,255,0.12);box-shadow:0 10px 30px rgba(76,201,240,0.06)}
+      .fee.top .value{font-size:1.6rem;color:var(--top-accent)}
+      .meta{color:var(--muted);font-size:0.85rem;margin-top:8px}
+      .fee .estimate{margin-top:8px;color:var(--muted);font-weight:600}
+      .historical-panel{margin-top:1.5rem;border:1px solid rgba(255,255,255,0.08);}
+      .historical-panel .meta{margin-bottom:1rem}
+      .history-note{color:#82c8ff;font-size:0.9rem;margin-bottom:14px}
+      pre{background:transparent;border-radius:8px;color:var(--muted);padding:0;margin-top:1rem}
+      @media (max-width:520px){.fees{grid-template-columns:repeat(2,1fr)}}
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>MCP Fee Prices</h1>
+        <button id="load">Refresh</button>
+      </header>
+
+      <div class="panel">
+        <div class="meta">Current Bitcoin fee estimates (sat/vB).</div>
+        <ul id="fees" class="fees" aria-live="polite">
+          <!-- fee items injected here -->
+        </ul>
+        <pre id="raw" style="display:none">Raw output</pre>
+      </div>
+
+      <div class="panel historical-panel">
+        <div class="meta">Historical price data</div>
+        <ul id="historical" class="fees" aria-live="polite">
+          <!-- historical fee items injected here -->
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const feeHistory = [
+        { date: 'Day 1', fee: 0.4123 },
+        { date: 'Day 2', fee: 0.3209 },
+        { date: 'Day 3', fee: 0.3595 },
+        { date: 'Day 4', fee: 0.418 },
+        { date: 'Day 5', fee: 0.2732 },
+        { date: 'Day 6', fee: 0.2526 },
+        { date: 'Day 7', fee: 0.7056 },
+      ];
+
+      const loadBtn = document.getElementById('load');
+      const feesEl = document.getElementById('fees');
+      const historicalEl = document.getElementById('historical');
+      const rawEl = document.getElementById('raw');
+
+      function renderFees(obj){
+        // convert to sorted numeric array
+        const entries = Object.keys(obj).map(k=>({k:parseInt(k,10),v:obj[k]})).sort((a,b)=>a.k-b.k);
+        feesEl.innerHTML = '';
+        historicalEl.innerHTML = '';
+
+        const topEntries = entries.slice(0, 3);
+
+        topEntries.forEach((e)=>{
+          const li = document.createElement('li');
+          li.className = 'fee top';
+          const label = document.createElement('div');
+          label.className = 'label';
+          label.textContent = e.k === 1 ? '1 block (fastest)' : e.k + ' blocks';
+          const value = document.createElement('div');
+          value.className = 'value';
+          const feeRate = Math.round(e.v * 1000) / 1000;
+          value.textContent = feeRate + ' sat/vB';
+          li.appendChild(label);
+          li.appendChild(value);
+
+          const estimate = document.createElement('div');
+          estimate.className = 'estimate';
+          estimate.textContent = 'Estimated: ' + (Math.round(feeRate * 100) / 100) + ' sat/vB';
+          li.appendChild(estimate);
+
+          feesEl.appendChild(li);
+        });
+
+        feeHistory.forEach((item)=>{
+          const li = document.createElement('li');
+          li.className = 'fee';
+          const label = document.createElement('div');
+          label.className = 'label';
+          label.textContent = item.date;
+          const value = document.createElement('div');
+          value.className = 'value';
+          value.textContent = item.fee + ' sat/vB';
+          li.appendChild(label);
+          li.appendChild(value);
+          historicalEl.appendChild(li);
+        });
+
+        rawEl.textContent = JSON.stringify(obj, null, 2);
+      }
+
+      async function load(){
+        loadBtn.disabled = true; loadBtn.textContent = 'Loading…';
+        try{
+          const res = await fetch('/api/getFeePrices');
+          if(!res.ok) throw new Error('HTTP ' + res.status);
+          const json = await res.json();
+          const feeprices = json.feeprices || {};
+          renderFees(feeprices);
+        }catch(err){
+          feesEl.innerHTML = '<li style="color:#ff6b6b">Error: '+ (err.message || err) +'</li>';
+        }finally{
+          loadBtn.disabled = false; loadBtn.textContent = 'Refresh';
+        }
+      }
+
+      loadBtn.addEventListener('click', load);
+      // initial load
+      load();
+    </script>
+  </body>
+</html>
